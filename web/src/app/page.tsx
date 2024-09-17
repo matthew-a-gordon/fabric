@@ -2,28 +2,34 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { models } from '../config/models';
+
+interface Chat {
+  id: string;
+  title: string;
+  messages: { role: string; content: string }[];
+}
 
 export default function FabricUI() {
   const [input, setInput] = useState('');
   const [patterns, setPatterns] = useState([]);
-  const [models, setModels] = useState([]);
   const [selectedPattern, setSelectedPattern] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [currentChat, setCurrentChat] = useState<Chat | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchPatterns();
-    fetchModels();
+    loadChats();
   }, []);
 
   const fetchPatterns = async () => {
     try {
-      console.log('Fetching patterns');
       const response = await fetch('/api/patterns');
       const data = await response.json();
-      console.log('Patterns data:', data);
       if (data.error) {
         console.error('Error fetching patterns:', data.error);
         setPatterns([]);
@@ -36,22 +42,19 @@ export default function FabricUI() {
     }
   };
 
-  const fetchModels = async () => {
-    try {
-      console.log('Fetching models');
-      const response = await fetch('/api/models');
-      const data = await response.json();
-      console.log('Models data:', data);
-      if (data.error) {
-        console.error('Error fetching models:', data.error);
-        setModels([]);
-      } else {
-        setModels(data.models || []);
-      }
-    } catch (error) {
-      console.error('Error fetching models:', error);
-      setModels([]);
+  const loadChats = () => {
+    const savedChats = localStorage.getItem('fabric-chats');
+    if (savedChats) {
+      setChats(JSON.parse(savedChats));
     }
+  };
+
+  const saveChat = (chat: Chat) => {
+    const updatedChats = currentChat
+      ? chats.map(c => c.id === chat.id ? chat : c)
+      : [...chats, chat];
+    setChats(updatedChats);
+    localStorage.setItem('fabric-chats', JSON.stringify(updatedChats));
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -82,7 +85,25 @@ export default function FabricUI() {
       
       const data = await response.text();
       setOutput(data);
+      if (currentChat) {
+        const updatedChat = {
+          ...currentChat,
+          messages: [...currentChat.messages, { role: 'user', content: input }, { role: 'assistant', content: data }]
+        };
+        setCurrentChat(updatedChat);
+        saveChat(updatedChat);
+      } else {
+        const newChat: Chat = {
+          id: Date.now().toString(),
+          title: `Chat ${chats.length + 1}`,
+          messages: [{ role: 'user', content: input }, { role: 'assistant', content: data }]
+        };
+        setCurrentChat(newChat);
+        saveChat(newChat);
+      }
+      setInput('');
     } catch (error) {
+      console.error('Error:', error);
       setOutput('An error occurred while processing your request.');
     } finally {
       setIsLoading(false);
@@ -90,86 +111,111 @@ export default function FabricUI() {
   };
 
   return (
-    <div className="container mx-auto p-4 text-gray-200"> {/* Light text for labels */}
-      <h1 className="text-2xl font-bold mb-4 text-gray-100">Fabric UI</h1>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label htmlFor="input" className="block text-sm font-medium mb-1">
-            Input (Text or YouTube URL)
-          </label>
-          <textarea
-            id="input"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            className="mt-1 block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
-            rows={4}
-            placeholder="Enter text or YouTube URL"
-          />
-        </div>
-        <div>
-          <label htmlFor="file-upload" className="block text-sm font-medium mb-1">
-            Or upload a file
-          </label>
-          <input
-            type="file"
-            id="file-upload"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            className="mt-1 block w-full text-sm text-gray-500
-              file:mr-4 file:py-2 file:px-4
-              file:rounded-full file:border-0
-              file:text-sm file:font-semibold
-              file:bg-indigo-600 file:text-white
-              hover:file:bg-indigo-700"
-          />
-        </div>
-        <div className="space-y-4">
-          <div>
-            <label htmlFor="pattern" className="block text-sm font-medium mb-1">
-              Pattern
-            </label>
-            <select
-              id="pattern"
-              value={selectedPattern}
-              onChange={(e) => setSelectedPattern(e.target.value)}
-              className="mt-1 block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 h-10" // Increased height
-            >
-              <option value="">Select a pattern</option>
-              {patterns.map((pattern) => (
-                <option key={pattern} value={pattern}>{pattern}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="model" className="block text-sm font-medium mb-1">
-              Model
-            </label>
-            <select
-              id="model"
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="mt-1 block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 h-10" // Increased height
-            >
-              <option value="">Select a model</option>
-              {models.map((model) => (
-                <option key={model} value={model}>{model}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <button
-          type="submit"
-          className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+    <div className="flex h-screen bg-gray-900 text-white">
+      {/* Sidebar */}
+      <div className="w-64 bg-gray-800 p-4 overflow-y-auto">
+        <h2 className="text-xl font-bold mb-4">Fabric UI</h2>
+        <button 
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mb-4"
+          onClick={() => setCurrentChat(null)}
         >
-          Execute
+          New Chat
         </button>
-      </form>
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold mb-2">Output:</h2>
-        <div className="bg-white border border-gray-300 rounded-md p-4 h-64 overflow-auto">
-          <ReactMarkdown className="text-black prose">
-            {output || "No output yet."}
-          </ReactMarkdown>
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-gray-400">Previous Chats</h3>
+          {chats.map(chat => (
+            <button 
+              key={chat.id} 
+              className="w-full text-left p-2 hover:bg-gray-700 rounded"
+              onClick={() => setCurrentChat(chat)}
+            >
+              {chat.title}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col">
+        {/* Chat history and output */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {currentChat && currentChat.messages.map((msg, index) => (
+            <div key={index} className={`mb-4 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+              <div className={`inline-block p-2 rounded-lg ${msg.role === 'user' ? 'bg-blue-600' : 'bg-gray-700'}`}>
+                <ReactMarkdown>{msg.content}</ReactMarkdown>
+              </div>
+            </div>
+          ))}
+          {!currentChat && output && (
+            <div className="mb-4">
+              <div className="inline-block p-2 rounded-lg bg-gray-700">
+                <ReactMarkdown>{output}</ReactMarkdown>
+              </div>
+            </div>
+          )}
+          {!currentChat && !output && (
+            <div className="flex flex-col items-center justify-center h-full">
+              <h1 className="text-4xl font-bold mb-4">Welcome to Fabric UI</h1>
+              <p className="text-xl text-gray-400">How can I help you today?</p>
+            </div>
+          )}
+        </div>
+
+        {/* Input area */}
+        <div className="p-4 bg-gray-800">
+          <form onSubmit={handleSubmit} className="flex flex-col space-y-4">
+            <div className="flex space-x-4">
+              <select
+                value={selectedPattern}
+                onChange={(e) => setSelectedPattern(e.target.value)}
+                className="flex-1 p-2 rounded bg-gray-700 border border-gray-600 text-white"
+              >
+                <option value="">Select a pattern</option>
+                {patterns.map((pattern) => (
+                  <option key={pattern} value={pattern}>{pattern}</option>
+                ))}
+              </select>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="flex-1 p-2 rounded bg-gray-700 border border-gray-600 text-white"
+              >
+                <option value="">Select a model</option>
+                {models.map((model) => (
+                  <option key={model} value={model}>{model}</option>
+                ))}
+              </select>
+            </div>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              className="w-full p-2 rounded bg-gray-700 border border-gray-600 text-white"
+              rows={4}
+              placeholder="Enter text or YouTube URL"
+            />
+            <div className="flex items-center space-x-4">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+                id="file-upload"
+              />
+              <label 
+                htmlFor="file-upload" 
+                className="cursor-pointer bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded"
+              >
+                Upload File
+              </label>
+              <button
+                type="submit"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Processing...' : 'Send'}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
